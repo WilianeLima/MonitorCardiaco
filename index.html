@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitor Cardíaco</title>
+    <!-- Favicon -->
+    <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/833/833472.png" type="image/png">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <style>
+        /* Fundo com gradiente */
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(to right, #ff4e50, #fc913a);
+            text-align: center;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        /* Container principal */
+        .container {
+            display: flex;
+            max-width: 900px;
+            width: 90%;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Painel de Informações */
+        .info-panel {
+            width: 45%;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .status-card {
+            background: #fff;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 15px;
+            font-size: 1.2em;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .status-card i {
+            font-size: 1.5em;
+            color: red;
+        }
+
+        /* Botões */
+        .buttons {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .buttons button {
+            background: #222;
+            color: white;
+            border: none;
+            padding: 10px;
+            cursor: pointer;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: all 0.3s;
+        }
+
+        .buttons button:hover {
+            background: #444;
+            transform: scale(1.05);
+        }
+
+        /* Gráfico */
+        .chart-panel {
+            width: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        canvas {
+            width: 100%;
+            max-height: 250px;
+        }
+
+        /* Modo Escuro */
+        body.dark-mode {
+            background: linear-gradient(to right, #1e1e1e, #323232);
+            color: #070707;
+        }
+
+        .container.dark-mode {
+            background: rgba(50, 50, 50, 0.9);
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+        }
+
+        /* Cores do BPM */
+        .low { color: blue; }
+        .normal { color: red; }
+        .high { color: blue; }
+
+        /* Centralizando o título */
+        h2 {
+            text-align: center;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <!-- Painel de Informações -->
+        <div class="info-panel">
+            <h2>Monitoramento Cardíaco</h2>
+
+            <div class="status-card">
+                <i class="fas fa-heartbeat"></i>
+                <h3>BPM: <span id="latestBPM" class="normal">Carregando...</span></h3>
+            </div>
+
+            <div class="status-card">
+                <i class="far fa-clock"></i>
+                <h3>Hora: <span id="lastTime">Carregando...</span></h3>
+            </div>
+
+            <div class="buttons">
+                <button id="toggleTheme">🌙 Alternar Tema</button>
+                <button id="refreshData">🔄 Atualizar</button>
+            </div>
+        </div>
+
+        <!-- Gráfico -->
+        <div class="chart-panel">
+            <canvas id="bpmChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        async function fetchData() {
+            const url = "https://api.thingspeak.com/channels/2841598/feeds.json?results=70";
+            const response = await fetch(url);
+            const data = await response.json();
+
+            const totalFeeds = data.feeds.length;
+            const latestFeeds = data.feeds.slice(Math.max(totalFeeds - 15, 0)); // Pega as últimas 15 amostras
+
+            const labels = latestFeeds.map(entry => {
+                const date = new Date(entry.created_at);
+                return date.getHours().toString().padStart(2, '0') + ":" + date.getMinutes().toString().padStart(2, '0');
+            });
+
+            const bpmValues = latestFeeds.map(entry => parseFloat(entry.field1));
+            const latestBPM = bpmValues[bpmValues.length - 1];
+            const latestTime = new Date(latestFeeds[bpmValues.length - 1].created_at);
+            const formattedTime = latestTime.getHours().toString().padStart(2, '0') + ":" + latestTime.getMinutes().toString().padStart(2, '0');
+
+            document.getElementById("latestBPM").textContent = latestBPM;
+            document.getElementById("lastTime").textContent = formattedTime;
+
+            // Define a cor conforme a faixa do BPM
+            const bpmElement = document.getElementById("latestBPM");
+            if (latestBPM < 50) {
+                bpmElement.className = "low";
+            } else if (latestBPM <= 90) {
+                bpmElement.className = "normal";
+            } else {
+                bpmElement.className = "high";
+            }
+
+            speak(`O último batimento cardíaco registrado foi de ${latestBPM} batimentos por minuto, às ${formattedTime}.`);
+            createChart(labels, bpmValues);
+        }
+
+        function createChart(labels, bpmValues) {
+            const ctx = document.getElementById('bpmChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: "Batimentos por Minuto (BPM)",
+                        data: bpmValues,
+                        borderColor: "red",
+                        backgroundColor: "rgba(255, 0, 0, 0.2)",
+                        borderWidth: 3,
+                        tension: 0.3,
+                        pointRadius: 4,
+                        pointBackgroundColor: "black"
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: true }
+                    },
+                    scales: {
+                        y: {
+                            min: 0,
+                            max: 120,
+                            ticks: {
+                                stepSize: 30 // Define os intervalos de 30 em 30 no eixo Y
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function speak(text) {
+            const speech = new SpeechSynthesisUtterance(text);
+            speech.lang = 'pt-BR';
+            speech.volume = 1;
+            window.speechSynthesis.speak(speech);
+        }
+
+        document.getElementById('toggleTheme').addEventListener('click', () => {
+            document.body.classList.toggle('dark-mode');
+        });
+
+        document.getElementById('refreshData').addEventListener('click', fetchData);
+
+        fetchData();
+    </script>
+
+</body>
+</html>

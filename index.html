@@ -139,7 +139,7 @@
 
             <div class="buttons">
                 <button id="toggleTheme">🌙 Alternar Tema</button>
-                <button id="refreshData">🔄 Atualizar</button>
+                <button id="speakBPM">🔊 Ouvir o Batimento</button>
             </div>
         </div>
 
@@ -150,14 +150,24 @@
     </div>
 
     <script>
+        let lastBPM = null; 
+        let lastTime = null; 
+        let firstFetch = true; 
+
+        function speak(text) {
+            const speech = new SpeechSynthesisUtterance(text);
+            speech.lang = 'pt-BR';
+            speech.volume = 1;
+            window.speechSynthesis.speak(speech);
+        }
+
         async function fetchData() {
             const url = "https://api.thingspeak.com/channels/2841598/feeds.json?results=70";
             const response = await fetch(url);
             const data = await response.json();
 
             const totalFeeds = data.feeds.length;
-            const latestFeeds = data.feeds.slice(Math.max(totalFeeds - 15, 0)); // Pega as últimas 15 amostras
-
+            const latestFeeds = data.feeds.slice(Math.max(totalFeeds - 15, 0)); 
             const labels = latestFeeds.map(entry => {
                 const date = new Date(entry.created_at);
                 return date.getHours().toString().padStart(2, '0') + ":" + date.getMinutes().toString().padStart(2, '0');
@@ -171,7 +181,6 @@
             document.getElementById("latestBPM").textContent = latestBPM;
             document.getElementById("lastTime").textContent = formattedTime;
 
-            // Define a cor conforme a faixa do BPM
             const bpmElement = document.getElementById("latestBPM");
             if (latestBPM < 50) {
                 bpmElement.className = "low";
@@ -181,7 +190,14 @@
                 bpmElement.className = "high";
             }
 
-            speak(`O último batimento cardíaco registrado foi de ${latestBPM} batimentos por minuto, às ${formattedTime}.`);
+            if (firstFetch) {
+                speak(`O último batimento cardíaco registrado foi de ${latestBPM} batimentos por minuto, às ${formattedTime}.`);
+                firstFetch = false;
+            }
+
+            lastBPM = latestBPM;
+            lastTime = formattedTime;
+
             createChart(labels, bpmValues);
         }
 
@@ -213,7 +229,7 @@
                             min: 0,
                             max: 120,
                             ticks: {
-                                stepSize: 30 // Define os intervalos de 30 em 30 no eixo Y
+                                stepSize: 30 
                             }
                         }
                     }
@@ -221,20 +237,28 @@
             });
         }
 
-        function speak(text) {
-            const speech = new SpeechSynthesisUtterance(text);
-            speech.lang = 'pt-BR';
-            speech.volume = 1;
-            window.speechSynthesis.speak(speech);
-        }
-
         document.getElementById('toggleTheme').addEventListener('click', () => {
             document.body.classList.toggle('dark-mode');
         });
 
-        document.getElementById('refreshData').addEventListener('click', fetchData);
+        document.getElementById('speakBPM').addEventListener('click', () => {
+            const latestBPM = document.getElementById("latestBPM").textContent;
+            const lastTime = document.getElementById("lastTime").textContent;
+            speak(`O último batimento cardíaco registrado foi de ${latestBPM} batimentos por minuto, às ${lastTime}.`);
+        });
 
-        fetchData();
+        window.addEventListener('load', () => {
+            const lastVisit = localStorage.getItem('lastVisit');
+            const now = new Date().getTime();
+            if (!lastVisit || (now - lastVisit) > 300000) {
+                firstFetch = true;
+                localStorage.setItem('lastVisit', now);
+            }
+            fetchData();
+        });
+
+        setInterval(fetchData, 10000); 
+
     </script>
 
 </body>
